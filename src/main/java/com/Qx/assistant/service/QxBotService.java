@@ -1,6 +1,7 @@
 package com.Qx.assistant.service;
 
 import com.Qx.assistant.config.BotConfig;
+import com.Qx.assistant.model.User;
 import com.Qx.assistant.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,9 @@ public class QxBotService {
     private MembershipVerificationService membershipVerificationService;
 
     @Autowired
+    private RewardDisplayService rewardDisplayService; // Added reward display service
+
+    @Autowired
     private BotConfig bot;
 
     public void handleUpdate(Update update) {
@@ -46,7 +50,6 @@ public class QxBotService {
             return;
         }
 
-        // Detect /start with referral
         if (msg.hasText() && msg.getText().startsWith("/start")) {
 
             String[] parts = msg.getText().split(" ");
@@ -58,8 +61,30 @@ public class QxBotService {
                 referralService.registerUser(chatId, username);
             }
 
-            send(chatId, "Welcome to QX Assistant Bot!\n\nHere is your referral link:\n" +
-                    "https://t.me/qx_ethiopia_bot?start=" + userRepo.findById(chatId).get().getReferralCode(), null);
+            User user = userRepo.findById(chatId).get();
+            String welcomeMsg = "Welcome to QX Assistant Bot!\n\n" +
+                    "Here is your referral link:\n" +
+                    "https://t.me/qx_ethiopia_bot?start=" + user.getReferralCode() + "\n\n" +
+                    "Click /rewards to see your rewards!";
+            send(chatId, welcomeMsg, createMainKeyboard());
+        }
+
+        if (msg.hasText() && msg.getText().equals("/rewards")) {
+            User user = userRepo.findById(chatId).orElse(null);
+            if (user != null) {
+                send(chatId, rewardDisplayService.getRewardsDescription(user), createMainKeyboard());
+            }
+        }
+
+        if (msg.hasText() && msg.getText().equals("📊 My Referrals")) {
+            User user = userRepo.findById(chatId).orElse(null);
+            if (user != null) {
+                String refMsg = "👤 *Your Referral Stats*\n\n" +
+                        "Referral Code: `" + user.getReferralCode() + "`\n" +
+                        "Total Invites: *" + user.getInviteCount() + "*\n\n" +
+                        "Share your code to earn rewards!";
+                send(chatId, refMsg, createMainKeyboard());
+            }
         }
 
         if (msg.hasText() && msg.getText().equals("I Joined")) {
@@ -87,11 +112,29 @@ public class QxBotService {
         return keyboardMarkup;
     }
 
+    private ReplyKeyboardMarkup createMainKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setSelective(true);
+        keyboardMarkup.setResizeKeyboard(true);
+        keyboardMarkup.setOneTimeKeyboard(false);
+
+        List<KeyboardRow> keyboard = new ArrayList<>();
+
+        KeyboardRow row1 = new KeyboardRow();
+        row1.add(new KeyboardButton("🎁 View Rewards"));
+        row1.add(new KeyboardButton("📊 My Referrals"));
+        keyboard.add(row1);
+
+        keyboardMarkup.setKeyboard(keyboard);
+        return keyboardMarkup;
+    }
+
     private void send(Long chatId, String text, ReplyKeyboardMarkup keyboard) {
         try {
             SendMessage sm = new SendMessage();
             sm.setChatId(chatId.toString());
             sm.setText(text);
+            sm.setParseMode("Markdown");
             if (keyboard != null) {
                 sm.setReplyMarkup(keyboard);
             }
