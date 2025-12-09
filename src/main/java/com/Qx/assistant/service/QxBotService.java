@@ -4,11 +4,15 @@ import com.Qx.assistant.config.BotConfig;
 import com.Qx.assistant.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.telegram.telegrambots.meta.TelegramBotsApi;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 public class QxBotService {
@@ -23,8 +27,10 @@ public class QxBotService {
     private RewardService rewardService;
 
     @Autowired
-    private BotConfig bot; // your TelegramLongPollingBot component
+    private MembershipVerificationService membershipVerificationService;
 
+    @Autowired
+    private BotConfig bot;
 
     public void handleUpdate(Update update) {
 
@@ -33,6 +39,12 @@ public class QxBotService {
         Message msg = update.getMessage();
         Long chatId = msg.getChatId();
         String username = msg.getFrom().getUserName();
+        Long userId = msg.getFrom().getId();
+
+        if (!membershipVerificationService.isUserMember(userId)) {
+            send(chatId, membershipVerificationService.getNotMemberMessage(), createJoinedKeyboard());
+            return;
+        }
 
         // Detect /start with referral
         if (msg.hasText() && msg.getText().startsWith("/start")) {
@@ -47,19 +59,49 @@ public class QxBotService {
             }
 
             send(chatId, "Welcome to QX Assistant Bot!\n\nHere is your referral link:\n" +
-                    "https://t.me/qx_ethiopia_bot?start=" + userRepo.findById(chatId).get().getReferralCode());
+                    "https://t.me/qx_ethiopia_bot?start=" + userRepo.findById(chatId).get().getReferralCode(), null);
+        }
+
+        if (msg.hasText() && msg.getText().equals("I Joined")) {
+            if (membershipVerificationService.isUserMember(userId)) {
+                send(chatId, "✅ Great! You've successfully joined our community. Now you can use the bot.\n\nClick /start to begin!", null);
+            } else {
+                send(chatId, "❌ You haven't joined both the channel and group yet.\n\n" +
+                        membershipVerificationService.getNotMemberMessage(), createJoinedKeyboard());
+            }
         }
     }
 
-    private void send(Long chatId, String text) {
+    private ReplyKeyboardMarkup createJoinedKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setSelective(true);
+        keyboardMarkup.setResizeKeyboard(true);
+        keyboardMarkup.setOneTimeKeyboard(true);
+
+        List<KeyboardRow> keyboard = new ArrayList<>();
+        KeyboardRow row = new KeyboardRow();
+        row.add(new KeyboardButton("I Joined"));
+        keyboard.add(row);
+
+        keyboardMarkup.setKeyboard(keyboard);
+        return keyboardMarkup;
+    }
+
+    private void send(Long chatId, String text, ReplyKeyboardMarkup keyboard) {
         try {
             SendMessage sm = new SendMessage();
             sm.setChatId(chatId.toString());
             sm.setText(text);
-            bot.execute(sm); // <- execute the send via the registered bot instance
+            if (keyboard != null) {
+                sm.setReplyMarkup(keyboard);
+            }
+            bot.execute(sm);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
+    private void send(Long chatId, String text) {
+        send(chatId, text, null);
+    }
 }
